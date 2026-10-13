@@ -1,0 +1,242 @@
+// SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
+/*
+ * Samsung Galaxy A14 4G (SM-A145F, S5E3830 / Exynos850) device tree source
+ *
+ * Derived from exynos850-a135f.dts. Memory map, SD slot, USB and key GPIOs
+ * come from the live DTB dumped from a running stock A145F.
+ */
+
+/dts-v1/;
+#include "exynos850.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	model = "Samsung Galaxy A14 4G";
+	compatible = "samsung,a145f", "samsung,exynos850";
+
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	aliases {
+		mmc0 = &mmc_0;
+		mmc1 = &mmc_2;
+	};
+
+	chosen {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		bootargs = "clk_ignore_unused pd_ignore_unused regulator_ignore_unused";
+
+		framebuffer@fa000000 {
+			compatible = "simple-framebuffer", "framebuffer-serial";
+			reg = <0 0xfa000000 0 (1080 * 2408 * 4)>;
+			width = <1080>;
+			height = <2408>;
+			stride = <(1080 * 4)>;
+			format = "a8r8g8b8";
+			clocks = <&cmu_dpu CLK_GOUT_DPU_DECON0_ACLK>,
+				 <&cmu_dpu CLK_GOUT_DPU_DMA_ACLK>,
+				 <&cmu_dpu CLK_GOUT_DPU_DPP_ACLK>,
+				 <&cmu_dpu CLK_GOUT_DPU_PPMU_ACLK>,
+				 <&cmu_dpu CLK_GOUT_DPU_PPMU_PCLK>,
+				 <&cmu_dpu CLK_GOUT_DPU_SMMU_CLK>;
+		};
+	};
+
+	/* 4 GiB, as handed over by the stock bootloader (live DTB). */
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x0 0x3ba00000>,
+		      <0x0 0xc0000000 0x0 0x20000000>,
+		      <0x0 0xe0d00000 0x0 0x1f300000>,
+		      <0x8 0x80000000 0x0 0x80000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		ramoops@f0f10000 {
+			compatible = "ramoops";
+			reg = <0 0xf0f10000 0 0x8000>;
+			record-size = <0x2000>;
+			console-size = <0x4000>;
+			ftrace-size = <0>;
+			pmsg-size = <0x2000>;
+		};
+
+		cont_splash_mem: framebuffer@fa000000 {
+			reg = <0 0xfa000000 0 (1080 * 2408 * 4)>;
+			no-map;
+		};
+	};
+
+	rtcclk: clock-rtcclk {
+		compatible = "fixed-clock";
+		clock-output-names = "rtcclk";
+		#clock-cells = <0>;
+		clock-frequency = <32768>;
+	};
+
+	/* TODO: replace once the S2MPU12 / S2MU106 PMICs are described */
+	reg_dummy: regulator-0 {
+		compatible = "regulator-fixed";
+		regulator-name = "dummy_reg";
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+
+		pinctrl-0 = <&key_voldown &key_volup>;
+		pinctrl-names = "default";
+
+		voldown-key {
+			label = "Volume Down";
+			linux,code = <KEY_VOLUMEDOWN>;
+			gpios = <&gpa1 0 GPIO_ACTIVE_LOW>;
+			wakeup-source;
+		};
+
+		volup-key {
+			label = "Volume Up";
+			linux,code = <KEY_VOLUMEUP>;
+			gpios = <&gpa0 7 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+};
+
+&soc {
+	/* microSD slot (dedicated), dwmmc2 in the stock DTB */
+	mmc_2: mmc@13500000 {
+		compatible = "samsung,exynos7-dw-mshc";
+		reg = <0x13500000 0x2000>;
+		/* not used by U-Boot; verify against the TRM before Linux use */
+		interrupts = <GIC_SPI 454 IRQ_TYPE_LEVEL_HIGH>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		clocks = <&cmu_core CLK_GOUT_MMC_CARD_ACLK>,
+			 <&cmu_core CLK_GOUT_MMC_CARD_SDCLKIN>;
+		clock-names = "biu", "ciu";
+		fifo-depth = <0x40>;
+		clock-frequency = <800000000>;
+		samsung,dw-mshc-ciu-div = <3>;
+		samsung,dw-mshc-sdr-timing = <3 2>;
+		samsung,dw-mshc-ddr-timing = <3 2>;
+		bus-width = <4>;
+		cap-sd-highspeed;
+		sd-uhs-sdr50;
+		sd-uhs-sdr104;
+		/* card-detect: gpa0-3, active low (inverted) */
+		cd-gpios = <&gpa0 3 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&sd2_clk_pins &sd2_cmd_pins &sd2_bus1_pins
+			     &sd2_bus4_pins &dwmmc2_cd_pins>;
+		status = "okay";
+	};
+};
+
+&oscclk {
+	clock-frequency = <26000000>;
+};
+
+&timer {
+	clock-frequency = <26000000>;
+};
+
+&rtc {
+	status = "disabled";
+	clocks = <&cmu_apm CLK_GOUT_RTC_PCLK>, <&rtcclk>;
+	clock-names = "rtc", "rtc_src";
+};
+
+&pinctrl_alive {
+	key_voldown: key-voldown-pins {
+		samsung,pins = "gpa1-0";
+		samsung,pin-function = <EXYNOS_PIN_FUNC_EINT>;
+		samsung,pin-pud = <EXYNOS_PIN_PULL_NONE>;
+		samsung,pin-drv = <EXYNOS5420_PIN_DRV_LV1>;
+	};
+
+	key_volup: key-volup-pins {
+		samsung,pins = "gpa0-7";
+		samsung,pin-function = <EXYNOS_PIN_FUNC_EINT>;
+		samsung,pin-pud = <EXYNOS_PIN_PULL_NONE>;
+		samsung,pin-drv = <EXYNOS5420_PIN_DRV_LV1>;
+	};
+
+	dwmmc2_cd_pins: dwmmc2-cd-pins {
+		samsung,pins = "gpa0-3";
+		samsung,pin-function = <EXYNOS_PIN_FUNC_EINT>;
+		samsung,pin-pud = <EXYNOS_PIN_PULL_NONE>;
+		samsung,pin-drv = <EXYNOS5420_PIN_DRV_LV1>;
+	};
+};
+
+&cmu_hsi {
+	clocks = <&oscclk>, <&rtcclk>,
+		 <&cmu_top CLK_DOUT_HSI_BUS>,
+		 <&cmu_top CLK_DOUT_HSI_MMC_CARD>,
+		 <&cmu_top CLK_DOUT_HSI_USB20DRD>;
+	clock-names = "oscclk", "rtcclk", "dout_hsi_bus",
+		      "dout_hsi_mmc_card", "dout_hsi_usb20drd";
+};
+
+&mmc_0 {
+	status = "okay";
+	compatible = "samsung,exynos7-dw-mshc";
+	mmc-ddr-1_8v;
+	mmc-hs200-1_8v;
+	mmc-hs400-1_8v;
+	cap-mmc-highspeed;
+	non-removable;
+	mmc-hs400-enhanced-strobe;
+	card-detect-delay = <200>;
+	clock-frequency = <800000000>;
+	bus-width = <8>;
+	samsung,dw-mshc-ciu-div = <3>;
+	samsung,dw-mshc-sdr-timing = <0 4>;
+	samsung,dw-mshc-ddr-timing = <2 4>;
+	samsung,dw-mshc-hs400-timing = <0 2>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&sd0_clk_pins &sd0_cmd_pins &sd0_rdqs_pins &sd0_nreset_pins
+		     &sd0_bus1_pins &sd0_bus4_pins &sd0_bus8_pins>;
+};
+
+/*
+ * USB: peripheral / high-speed only. VBUS and the S2MU106 charger/OTG chip
+ * are left to the stock bootloader's state (see the EDK2 ExynosUsbHostDxe
+ * notes for the register sequence needed for host mode).
+ */
+&usbdrd {
+	status = "okay";
+	/delete-property/ extcon;
+	/delete-property/ pinctrl-names;
+	/delete-property/ pinctrl-0;
+	vdd10-supply = <&reg_dummy>;
+	vdd33-supply = <&reg_dummy>;
+};
+
+&usbdrd_dwc3 {
+	status = "okay";
+	dr_mode = "peripheral";
+	maximum-speed = "high-speed";
+	/delete-property/ extcon;
+	phys = <&usbdrd_phy 0>;
+	phy-names = "usb2-phy";
+};
+
+&usbdrd_phy {
+	status = "okay";
+	/delete-property/ extcon;
+	/delete-property/ pinctrl-names;
+	/delete-property/ pinctrl-0;
+	vdd-supply = <&reg_dummy>;
+	vbus-supply = <&reg_dummy>;
+};
