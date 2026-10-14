@@ -6,6 +6,7 @@
  */
 
 #include <asm/armv8/mmu.h>
+#include <asm/io.h>
 #include <blk.h>
 #include <bootflow.h>
 #include <ctype.h>
@@ -14,6 +15,7 @@
 #include <efi_loader.h>
 #include <env.h>
 #include <errno.h>
+#include <linux/libfdt.h>
 #include <init.h>
 #include <linux/sizes.h>
 #include <lmb.h>
@@ -56,6 +58,49 @@ static struct mm_region exynos_mem_map[CONFIG_NR_DRAM_BANKS + 2] = {
 };
 
 struct mm_region *mem_map = exynos_mem_map;
+
+/*
+ * Display hand-off quirk.
+ *
+ * S-Boot leaves the DECON scanning out the splash framebuffer, but on
+ * devices with a command-mode DSI panel nothing refreshes the panel when
+ * the framebuffer changes after hand-off: the DECON hardware/software
+ * trigger has to be armed again. Both uniLoader (board-a145f.c,
+ * early_init) and edk2-exynos (PlatformInitialize) do this with a single
+ * write before they draw anything; without it a simple-framebuffer
+ * console draws into RAM but the screen stays on the stock splash.
+ *
+ * Offsets: DECON_F base + HW_SW_TRIG_CONTROL (0x70). The value comes from
+ * those two projects and is not documented in any TRM I could find.
+ */
+struct exynos_decon_kick {
+	const char *compatible;
+	phys_addr_t reg;
+	u32 val;
+};
+
+static const struct exynos_decon_kick exynos_decon_kicks[] = {
+	/* Galaxy A14 4G (SM-A145F, Exynos850 / s5e3830): DECON_F 0x13060000 */
+	{ "samsung,a145f", 0x13060070, 0x1281 },
+};
+
+static void exynos_decon_kick(const void *fdt_base)
+{
+	int i;
+
+	if (fdt_check_header(fdt_base) < 0)
+		return;
+
+	for (i = 0; i < ARRAY_SIZE(exynos_decon_kicks); i++) {
+		const struct exynos_decon_kick *k = &exynos_decon_kicks[i];
+
+		if (fdt_node_check_compatible(fdt_base, 0, k->compatible))
+			continue;
+
+		writel(k->val, k->reg);
+		return;
+	}
+}
 
 static const char *exynos_prev_bl_get_bootargs(void)
 {
@@ -322,6 +367,7 @@ int timer_init(void)
 int board_early_init_f(void)
 {
 	exynos_parse_dram_banks(gd->fdt_blob);
+	exynos_decon_kick(gd->fdt_blob);
 
 	return 0;
 }
